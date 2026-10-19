@@ -2,7 +2,6 @@
 
 A signal bot for Solana tokens. It watches new and trending pairs, throws out the obvious traps (rugs, honeypots, unrevoked authorities, concentrated holders), scores what is left, and alerts you with the reasons. Every signal is **paper-traded**, so you can measure whether the bot has any edge before putting money anywhere near it.
 
-> **Read this first.** SolScout never holds keys and never buys anything. It uses public APIs, so it will always see a token seconds to minutes after on-chain snipers do. Its value is filtering and discipline, not speed. Most new Solana tokens lose money. Nothing here is financial advice.
 
 ## How it works
 
