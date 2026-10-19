@@ -80,6 +80,9 @@ def score(p: Pair, f: Features, s: Safety | None, *, min_liquidity: float = 15_0
         if s.largest_pct is not None and s.largest_pct > 50:
             warnings.append(f"largest holder owns {s.largest_pct:.0f}% (may be the liquidity pool)")
 
+    if s and s.flags:
+        warnings.append("RugCheck danger flags: " + ", ".join(s.flags[:4]))
+
     total = sum(parts.values())
     if p.change_h6 > 300:
         total -= 25

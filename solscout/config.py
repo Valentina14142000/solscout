@@ -52,6 +52,11 @@ class Config:
     telegram_chat_id: str = ""
     http_timeout_s: float = 12.0
 
+    # --- dashboard
+    host: str = "127.0.0.1"            # use 0.0.0.0 when deploying
+    port: int = 8080
+    dashboard_password: str = ""       # if set, the dashboard asks for it (any username)
+
     @classmethod
     def from_env(cls) -> "Config":
         load_dotenv()
@@ -72,4 +77,6 @@ class Config:
             else:
                 val = raw
             setattr(cfg, f.name, val)
+        if not os.environ.get("SOLSCOUT_PORT") and os.environ.get("PORT"):  # hosting platforms set PORT
+            cfg.port = int(os.environ["PORT"])
         return cfg

@@ -87,6 +87,9 @@ class Safety:
     token_2022: bool = False
     largest_pct: float | None = None       # biggest holder (often the liquidity pool)
     top_holders_pct: float | None = None   # holders ranked 2-10
+    rugged: bool = False                   # flagged as rugged by a third-party checker
+    flags: tuple[str, ...] = ()            # extra danger flags (informational)
+    retry_later: bool = False              # transient failure (rate limit); do not treat as a verdict
     error: str = ""
 
 

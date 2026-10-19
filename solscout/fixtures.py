@@ -58,3 +58,38 @@ class FixtureSafety:
         if mint.startswith("MOONDOG"):
             return Safety(checked=True, mint_authority="SomeWallet111", top_holders_pct=61.0, largest_pct=40.0)
         return Safety(checked=True, top_holders_pct=14.0, largest_pct=38.0)
+
+
+def seed_demo(store, now: float):
+    """Fill a store with plausible history for `serve --demo`, and return a ScanResult for the status panel."""
+    from .engine import Engine, ScanResult
+    from .config import Config
+    from .notify import ConsoleNotifier
+
+    hist = [  # (symbol, hours ago, score, returns at 1h / 6h / 24h or None, rugged-at)
+        ("KITE", 40, 81, (14.0, 38.0, 22.0), None), ("MANTA", 33, 74, (-3.0, -12.0, -31.0), None),
+        ("NOVA", 27, 77, (9.0, 61.0, 140.0), None), ("PIXL", 20, 72, (-100.0, None, None), 1),
+        ("ECHO", 12, 79, (6.0, -8.0, None), None), ("DUNE", 5, 83, (18.0, None, None), None),
+        ("FERN", 0.5, 76, (None, None, None), None),
+    ]
+    for i, (sym, ago_h, score, rets, rug) in enumerate(hist):
+        created = now - ago_h * 3600
+        sid = store.add_signal(
+            mint=f"{sym}mint{i:0<38}", symbol=sym, pair_address=f"pair{sym}{i}", score=score,
+            entry_price=0.0005 * (i + 1), entry_liquidity=60_000 + i * 9_000,
+            reasons=[f"price +{25 + i * 4}% in 1h", f"volume running {3 + i % 3}.2x its earlier hourly average",
+                     "66% of last-hour trades are buys", f"liquidity ${60 + i * 9},000", "mint and freeze authority revoked"],
+            warnings=["largest holder owns 54% (may be the liquidity pool)"] if i % 3 == 0 else [], created_at=created)
+        for h, r in zip((1, 6, 24), rets):
+            if r is not None:
+                store.add_outcome(sid, h, 0.001, r, bool(rug) and r == -100.0, created + h * 3600)
+    cfg = Config()
+    res = ScanResult(candidates=84, evaluated=11, dropped={"honeypot": 3, "low_liquidity": 52, "freeze_authority": 2})
+    res.near = [{"symbol": "ORCA", "mint": "x", "score": 66.0, "why": "score 66 is below 70"},
+                {"symbol": "LUMA", "mint": "x", "score": 61.5, "why": "score too low (needs 70)"},
+                {"symbol": "BOLT", "mint": "x", "score": 58.0, "why": "score too low (needs 70)"}]
+    res.rejected = [{"symbol": "MOONDOG", "mint": "x", "code": "honeypot", "why": "900 buys and no sells in the last hour: likely a honeypot"},
+                    {"symbol": "FREEZY", "mint": "x", "code": "freeze_authority", "why": "freeze authority is still active: wallets can be frozen"},
+                    {"symbol": "THIN", "mint": "x", "code": "low_liquidity", "why": "liquidity $4,000 is below $15,000"}]
+    res.errors = ["Demo data: nothing here is a real market"]
+    return res

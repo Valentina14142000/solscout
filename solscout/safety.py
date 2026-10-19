@@ -34,6 +34,8 @@ def gate_onchain(s: Safety, cfg: Config) -> list[Fail]:
         if cfg.require_safety:
             fails.append(("no_onchain", f"on-chain check unavailable ({s.error or 'no data'})"))
         return fails
+    if s.rugged:
+        fails.append(("rugged", "flagged as rugged by RugCheck"))
     if s.mint_authority:
         fails.append(("mint_authority", "mint authority is still active: supply can be inflated"))
     if s.freeze_authority:

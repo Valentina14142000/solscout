@@ -6,13 +6,17 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import tracker
+import threading
+
+from . import runner, tracker
 from .config import Config
 from .engine import Engine, ScanResult
 from .models import SourceError
 from .notify import ConsoleNotifier, make_notifier
 from .sources import default_source
+from .sources.chain import ChainedSafety
 from .sources.rpc_safety import RpcSafety
+from .sources.rugcheck import RugCheckSafety
 from .store import Store
 
 
@@ -20,6 +24,8 @@ def _print_scan(res: ScanResult) -> None:
     print(f"candidates {res.candidates}  evaluated {res.evaluated}  signals {len(res.signals)}")
     for reason, n in sorted(res.dropped.items(), key=lambda x: -x[1]):
         print(f"  dropped {n:>3}  {reason}")
+    for n in res.near[:5]:
+        print(f"  near miss  {n['symbol']:<10} {n['score']:>5}  {n['why']}")
     for e in res.errors:
         print(f"  warning: {e}")
 
@@ -86,18 +92,28 @@ def cmd_check(args) -> int:
         ok = False
         pairs = []
     if pairs:
-        s = RpcSafety(cfg.rpc_url, cfg.http_timeout_s).check(pairs[0].mint)
+        s = _safety(cfg).check(pairs[0].mint)
         if s.checked:
             print(f"[ok]   on-chain: mint authority {'ACTIVE' if s.mint_authority else 'revoked'}, "
                   f"freeze {'ACTIVE' if s.freeze_authority else 'revoked'}")
         else:
             print(f"[warn] on-chain check failed: {s.error} (try a dedicated RPC URL, see README)")
+    if pairs:
+        r = RugCheckSafety(cfg.http_timeout_s).check(pairs[0].mint)
+        if r.checked:
+            print("[ok]   rugcheck: report parsed")
+        else:
+            print(f"[warn] rugcheck: {r.error}")
     print("[ok]   telegram: " + ("configured" if cfg.telegram_token and cfg.telegram_chat_id else "not configured (alerts print to the console)"))
     return 0 if ok else 1
 
 
+def _safety(cfg: Config) -> ChainedSafety:
+    return ChainedSafety([RpcSafety(cfg.rpc_url, cfg.http_timeout_s), RugCheckSafety(cfg.http_timeout_s)])
+
+
 def _build(cfg: Config) -> Engine:
-    return Engine(cfg, Store(cfg.db_path), default_source(cfg), RpcSafety(cfg.rpc_url, cfg.http_timeout_s), make_notifier(cfg))
+    return Engine(cfg, Store(cfg.db_path), default_source(cfg), _safety(cfg), make_notifier(cfg))
 
 
 def cmd_scan(_args) -> int:
@@ -107,24 +123,55 @@ def cmd_scan(_args) -> int:
     return 0
 
 
+def _log_cycle(res, status) -> None:
+    snap = status.snapshot()
+    if res is None:
+        print(time.strftime("%H:%M:%S"), "cycle failed:", snap["last_error"], flush=True)
+        return
+    print(time.strftime("%H:%M:%S"), f"candidates {res.candidates}  passed filters {res.evaluated}  "
+          f"signals {len(res.signals)}" + (f"  warnings {len(res.errors)}" if res.errors else ""), flush=True)
+
+
 def cmd_run(_args) -> int:
     cfg = Config.from_env()
-    eng = _build(cfg)
-    print(f"Running every {cfg.scan_interval_s}s. Ctrl+C to stop.")
-    while True:
-        try:
-            res = eng.scan_once()
-            n = tracker.resolve(cfg, eng.store, eng.source)
-            print(time.strftime("%H:%M:%S"), f"candidates {res.candidates} evaluated {res.evaluated} "
-                  f"signals {len(res.signals)} outcomes {n}" + (f" warnings {len(res.errors)}" if res.errors else ""), flush=True)
-        except KeyboardInterrupt:
-            return 0
-        except Exception as e:  # keep the worker alive whatever one cycle does
-            print("cycle failed:", repr(e), flush=True)
-        try:
-            time.sleep(cfg.scan_interval_s)
-        except KeyboardInterrupt:
-            return 0
+    eng, status, stop = _build(cfg), runner.Status(), threading.Event()
+    print(f"Scanning every {cfg.scan_interval_s}s. Ctrl+C to stop.")
+    try:
+        runner.loop(eng, status, stop, _log_cycle)
+    except KeyboardInterrupt:
+        stop.set()
+    return 0
+
+
+def cmd_serve(args) -> int:
+    """Dashboard plus the scanning worker in one process."""
+    from .web import make_server
+
+    cfg = Config.from_env()
+    status = runner.Status()
+    stop = threading.Event()
+    if args.demo:
+        from .fixtures import seed_demo
+        cfg.db_path = str(Path(tempfile.mkdtemp()) / "demo.db")
+        store = Store(cfg.db_path)
+        status.demo = True
+        status.record(seed_demo(store, time.time()), 0)
+    else:
+        eng = _build(cfg)
+        store = eng.store
+        threading.Thread(target=runner.loop, args=(eng, status, stop, _log_cycle), daemon=True).start()
+    if args.port:
+        cfg.port = args.port
+    srv = make_server(cfg, store, status)
+    print(f"Dashboard: http://{cfg.host}:{srv.server_address[1]}" + ("  (DEMO DATA)" if args.demo else ""))
+    if cfg.host not in ("127.0.0.1", "localhost") and not cfg.dashboard_password:
+        print("WARNING: dashboard is reachable from the network with no password. Set SOLSCOUT_DASHBOARD_PASSWORD.")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    stop.set()
+    return 0
 
 
 def cmd_stats(_args) -> int:
@@ -152,6 +199,10 @@ def main(argv: list[str] | None = None) -> int:
                             ("scan", cmd_scan, "run one scan"), ("run", cmd_run, "scan continuously"),
                             ("stats", cmd_stats, "paper-trade results")]:
         sub.add_parser(name, help=help_).set_defaults(fn=fn)
+    sv = sub.add_parser("serve", help="dashboard + scanning worker")
+    sv.add_argument("--port", type=int, default=0)
+    sv.add_argument("--demo", action="store_true", help="show the dashboard with sample data, no scanning")
+    sv.set_defaults(fn=cmd_serve)
     sp = sub.add_parser("signals", help="list recent signals")
     sp.add_argument("--limit", type=int, default=20)
     sp.set_defaults(fn=cmd_signals)

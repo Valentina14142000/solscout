@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SolScout</title>
+<style>
+:root{
+  --bg:#f4f6f3; --panel:#ffffff; --line:#dde3dc; --fg:#17201a; --muted:#5d6b61;
+  --accent:#0d7a4f; --pos:#0d7a4f; --neg:#b3261e; --warn:#9a6700; --chip:#e9eee8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1511; --panel:#161e18; --line:#27332b; --fg:#e4ebe5; --muted:#8fa196;
+  --accent:#3ddc97; --pos:#3ddc97; --neg:#ff7b72; --warn:#e3b341; --chip:#1f2a22; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1511; --panel:#161e18; --line:#27332b; --fg:#e4ebe5; --muted:#8fa196;
+  --accent:#3ddc97; --pos:#3ddc97; --neg:#ff7b72; --warn:#e3b341; --chip:#1f2a22; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding-inline:16px;padding-block:20px}
+main{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+h1{margin:0;font-size:1.35rem;letter-spacing:.01em}
+h2{margin:0 0 10px;font-size:.78rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600}
+.pill{font:600 .75rem var(--mono);padding:3px 9px;border-radius:99px;background:var(--chip);color:var(--muted)}
+.pill.ok{color:var(--pos)} .pill.bad{color:var(--neg)} .pill.warn{color:var(--warn)}
+.spacer{flex:1}
+.banner{border:1px solid var(--line);border-left:3px solid var(--warn);background:var(--panel);padding:10px 14px;
+  border-radius:6px;color:var(--muted);font-size:.88rem}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0}
+.funnel{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;font-family:var(--mono);font-size:.95rem}
+.funnel b{font-size:1.25rem}
+.funnel .arrow{color:var(--muted)}
+ul.plain{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);text-align:left;font-weight:600;padding:6px 10px;white-space:nowrap}
+td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.sig{cursor:pointer} tr.sig:hover td{background:var(--chip)}
+tr.detail td{background:var(--bg);font-size:.86rem}
+.pos{color:var(--pos)} .neg{color:var(--neg)} .muted{color:var(--muted)} .warnc{color:var(--warn)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:.88rem}
+.row:first-child{border-top:0}
+.row .why{color:var(--muted);text-align:right;min-width:0;overflow-wrap:anywhere}
+a{color:var(--accent)}
+@media (max-width:600px){
+  .hide-sm{display:none}
+  th,td{padding-inline:6px}
+  td.when{white-space:nowrap}
+  table{font-size:.85rem}
+}
+.empty{color:var(--muted);font-size:.9rem}
+footer{color:var(--muted);font-size:.8rem}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>SolScout</h1>
+    <span class="pill" id="state">connecting…</span>
+    <span class="pill">paper trading only</span>
+    <span class="spacer"></span>
+    <span class="muted" id="clock"></span>
+  </header>
+
+  <div class="banner">Automated analysis, not financial advice. Nothing here buys anything. Most new tokens lose money; judge this bot by the paper results below, and only once there are dozens of them.</div>
+
+  <section>
+    <h2>Last scan</h2>
+    <div id="scan" class="funnel"><span class="muted">waiting for the first scan…</span></div>
+    <ul class="plain" id="notes"></ul>
+  </section>
+
+  <section>
+    <h2>Signals</h2>
+    <div class="scroll"><table id="signals"></table></div>
+    <p class="empty" id="no-signals" hidden>No signals yet. That is normal: the filters are strict, and a quiet market produces none. See "Closest misses" below to confirm it is working.</p>
+  </section>
+
+  <section>
+    <h2>Paper results</h2>
+    <div class="scroll"><table id="stats"></table></div>
+    <p class="muted" style="margin:10px 0 0;font-size:.85rem" id="stats-note"></p>
+  </section>
+
+  <div class="cols">
+    <section><h2>Closest misses</h2><div id="near"></div></section>
+    <section><h2>Rejected by filters</h2><div id="rej"></div></section>
+  </div>
+
+  <footer>Refreshes every 10 seconds. Click a signal to see why it fired.</footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  function el(tag, props, kids) {
+    var n = document.createElement(tag);
+    for (var k in (props || {})) {
+      if (k === "class") n.className = props[k];
+      else if (k === "text") n.textContent = props[k];
+      else n.setAttribute(k, props[k]);
+    }
+    (kids || []).forEach(function (c) { n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return n;
+  }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  function ago(ts, now) {
+    var s = Math.max(0, Math.round(now - ts));
+    if (s < 60) return s + "s ago";
+    if (s < 3600) return Math.round(s / 60) + "m ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    return Math.round(s / 86400) + "d ago";
+  }
+  function pct(v) { return v == null ? "–" : (v > 0 ? "+" : "") + v.toFixed(1) + "%"; }
+  function cls(v) { return v == null ? "muted" : v > 0 ? "pos" : v < 0 ? "neg" : ""; }
+  function safeId(s) { return /^[A-Za-z0-9]+$/.test(s || "") ? s : null; }
+  function price(p) { return "$" + Number(p).toPrecision(4); }
+
+  var HOURS = [1, 6, 24];
+  var open = {};
+
+  function renderStatus(st) {
+    var state = $("state"), last = st.last_scan_at;
+    var stale = last && (st.now - last) > Math.max(180, st.config.scan_interval_s * 3);
+    if (!last) { state.textContent = st.last_error ? "error" : "starting"; state.className = "pill " + (st.last_error ? "bad" : "warn"); }
+    else if (stale) { state.textContent = "stalled · last scan " + ago(last, st.now); state.className = "pill bad"; }
+    else { state.textContent = "running · scanned " + ago(last, st.now); state.className = "pill ok"; }
+    HOURS = st.config.horizons_h || HOURS;
+    if (st.demo) { state.textContent = "demo"; state.className = "pill warn"; }
+
+    var scan = $("scan"); clear(scan);
+    var notes = $("notes"); clear(notes);
+    if (st.last) {
+      var l = st.last;
+      [[l.candidates, "candidates"], [l.evaluated, "passed filters"], [l.signals, "signals"]].forEach(function (x, i) {
+        if (i) scan.appendChild(el("span", { class: "arrow", text: "→" }));
+        scan.appendChild(el("span", {}, [el("b", { text: String(x[0]) }), " " + x[1]]));
+      });
+      (l.errors || []).forEach(function (e) { notes.appendChild(el("li", { class: "warnc", text: "⚠ " + e })); });
+    }
+    if (st.last_error) notes.appendChild(el("li", { class: "neg", text: "Last cycle failed: " + st.last_error }));
+    if (!st.config.telegram) notes.appendChild(el("li", { class: "muted", text: "Telegram is not configured, so alerts only appear here and in the console." }));
+    if (!st.config.dedicated_rpc) notes.appendChild(el("li", { class: "muted", text: "Using the public Solana RPC node, which rate-limits. A free dedicated endpoint is recommended (see README)." }));
+
+    function list(id, items, fmt) {
+      var box = $(id); clear(box);
+      if (!items || !items.length) { box.appendChild(el("p", { class: "empty", text: "Nothing yet." })); return; }
+      items.forEach(function (it) { box.appendChild(fmt(it)); });
+    }
+    var last2 = st.last || {};
+    list("near", last2.near, function (it) {
+      return el("div", { class: "row" }, [el("span", {}, [el("b", { text: it.symbol }), el("span", { class: "muted", text: "  " + it.score })]), el("span", { class: "why", text: it.why })]);
+    });
+    list("rej", last2.rejected, function (it) {
+      return el("div", { class: "row" }, [el("b", { text: it.symbol }), el("span", { class: "why", text: it.why })]);
+    });
+  }
+
+  function renderSignals(rows, now) {
+    var t = $("signals"); clear(t);
+    $("no-signals").hidden = rows.length > 0;
+    if (!rows.length) return;
+    var head = el("tr", {}, [el("th", { text: "When" }), el("th", { text: "Token" }), el("th", { class: "num hide-sm", text: "Score" }), el("th", { class: "num hide-sm", text: "Entry" })]);
+    HOURS.forEach(function (h) { head.appendChild(el("th", { class: "num", text: h + "h" })); });
+    t.appendChild(el("thead", {}, [head]));
+    var body = el("tbody");
+    rows.forEach(function (s) {
+      var tr = el("tr", { class: "sig" }, [
+        el("td", { class: "muted when", text: ago(s.created_at, now) }),
+        el("td", {}, [el("b", { text: s.symbol })]),
+        el("td", { class: "num hide-sm", text: s.score.toFixed(0) }),
+        el("td", { class: "num hide-sm", text: price(s.entry_price) })
+      ]);
+      HOURS.forEach(function (h) {
+        var o = s.outcomes[h];
+        tr.appendChild(o ? el("td", { class: "num " + cls(o.return_pct), text: o.rugged ? "rug" : pct(o.return_pct) })
+                         : el("td", { class: "num muted", text: "…" }));
+      });
+      var d = el("tr", { class: "detail" }); d.hidden = !open[s.id];
+      var cell = el("td", { colspan: String(4 + HOURS.length) });
+      cell.appendChild(el("div", { class: "muted", text: "score " + s.score.toFixed(0) + "/100 · entry " + price(s.entry_price) }));
+      s.reasons.forEach(function (r) { cell.appendChild(el("div", { text: "+ " + r })); });
+      s.warnings.forEach(function (w) { cell.appendChild(el("div", { class: "warnc", text: "! " + w })); });
+      var links = el("div", { class: "muted", style: "margin-top:6px" });
+      var pa = safeId(s.pair_address), mi = safeId(s.mint);
+      if (pa) links.appendChild(el("a", { href: "https://dexscreener.com/solana/" + pa, target: "_blank", rel: "noopener noreferrer", text: "chart" }));
+      if (pa && mi) links.appendChild(document.createTextNode(" · "));
+      if (mi) links.appendChild(el("a", { href: "https://rugcheck.xyz/tokens/" + mi, target: "_blank", rel: "noopener noreferrer", text: "rugcheck" }));
+      cell.appendChild(links); d.appendChild(cell);
+      tr.addEventListener("click", function () { open[s.id] = !open[s.id]; d.hidden = !open[s.id]; });
+      body.appendChild(tr); body.appendChild(d);
+    });
+    t.appendChild(body);
+  }
+
+  function renderStats(st, cost) {
+    var t = $("stats"); clear(t);
+    var cols = ["Horizon", "Results", "Win rate", "Average", "Median", "Worst", "Rugs"];
+    t.appendChild(el("thead", {}, [el("tr", {}, cols.map(function (c, i) { return el("th", { class: (i ? "num" : "") + (i === 4 || i === 5 ? " hide-sm" : ""), text: c }); }))]));
+    var body = el("tbody");
+    HOURS.forEach(function (h) {
+      var s = st.horizons[h] || { n: 0 };
+      var cells = [el("td", { text: h + "h" }), el("td", { class: "num", text: String(s.n) })];
+      if (s.n) {
+        cells.push(el("td", { class: "num", text: Math.round(s.win_rate * 100) + "%" }));
+        cells.push(el("td", { class: "num " + cls(s.avg_return), text: pct(s.avg_return) }));
+        cells.push(el("td", { class: "num hide-sm " + cls(s.median_return), text: pct(s.median_return) }));
+        cells.push(el("td", { class: "num hide-sm " + cls(s.worst), text: pct(s.worst) }));
+        cells.push(el("td", { class: "num", text: Math.round(s.rug_rate * 100) + "%" }));
+      } else { for (var i = 0; i < 5; i++) cells.push(el("td", { class: "num muted" + (i === 2 || i === 3 ? " hide-sm" : ""), text: "–" })); }
+      body.appendChild(el("tr", {}, cells));
+    });
+    t.appendChild(body);
+    var most = Math.max.apply(null, HOURS.map(function (h) { return (st.horizons[h] || { n: 0 }).n; }));
+    $("stats-note").textContent = "After " + cost + "% costs per trade; a liquidity collapse counts as -100%. " +
+      (most < 30 ? "Only " + most + " result" + (most === 1 ? "" : "s") + " so far: far too few to mean anything." : "");
+  }
+
+  function get(path) {
+    return fetch(path, { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+  }
+  function refresh() {
+    Promise.all([get("/api/status"), get("/api/signals?limit=50"), get("/api/stats")]).then(function (a) {
+      renderStatus(a[0]); renderSignals(a[1], a[0].now); renderStats(a[2], a[0].config.paper_cost_pct);
+      $("clock").textContent = new Date().toLocaleTimeString();
+    }).catch(function () {
+      $("state").textContent = "disconnected"; $("state").className = "pill bad";
+    });
+  }
+  refresh(); setInterval(refresh, 10000);
+})();
+</script>
+</body>
+</html>

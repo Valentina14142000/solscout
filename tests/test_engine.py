@@ -40,13 +40,14 @@ def test_failed_notification_keeps_the_signal_unnotified():
     assert store.list_signals()[0]["notified"] == 0
 
 
-def test_unverifiable_token_is_dropped():
+def test_unverifiable_token_never_signals_and_is_explained():
     class Down:
         def check(self, mint):
             return Safety(checked=False, error="rpc down")
     eng, store, src, sink, clock, cfg = make(safety=Down())
     res = eng.scan_once()
-    assert res.signals == [] and res.dropped.get("no_onchain", 0) >= 1
+    assert res.signals == []
+    assert any("could not verify" in n["why"] for n in res.near)
 
 
 def test_source_failure_is_reported_not_raised():
