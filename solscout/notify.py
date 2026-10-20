@@ -44,3 +44,14 @@ def make_notifier(cfg):
     if cfg.telegram_token and cfg.telegram_chat_id:
         return TelegramNotifier(cfg.telegram_token, cfg.telegram_chat_id, cfg.http_timeout_s)
     return ConsoleNotifier()
+
+
+def find_chat_id(token: str, timeout: float = 12.0) -> tuple[str | None, str]:
+    """Look through the bot's recent messages for the chat that wrote to it. Returns (chat_id, display name)."""
+    out = request_json(f"https://api.telegram.org/bot{token}/getUpdates", timeout=timeout)
+    for upd in reversed(out.get("result", []) if isinstance(out, dict) else []):
+        for key in ("message", "edited_message", "channel_post"):
+            chat = (upd.get(key) or {}).get("chat") or {}
+            if "id" in chat:
+                return str(chat["id"]), str(chat.get("first_name") or chat.get("title") or "")
+    return None, ""

@@ -183,6 +183,35 @@ def cmd_analyze(args) -> int:
     return 0
 
 
+def cmd_telegram(_args) -> int:
+    """Set up and test Telegram alerts without ever putting the token in a URL."""
+    from .notify import TelegramNotifier, find_chat_id
+
+    cfg = Config.from_env()
+    if not cfg.telegram_token:
+        print("No token found. Add this line to your .env file (no spaces, no quotes), then run this again:")
+        print("  SOLSCOUT_TELEGRAM_TOKEN=<the token @BotFather gave you>")
+        return 1
+    if not cfg.telegram_chat_id:
+        try:
+            chat_id, name = find_chat_id(cfg.telegram_token, cfg.http_timeout_s)
+        except SourceError as e:
+            print(f"Could not reach Telegram: {e}. Check that the token is correct and complete.")
+            return 1
+        if not chat_id:
+            print("Telegram has no messages for your bot yet. Open your bot in Telegram, press Start, send it any")
+            print("message, then run this command again.")
+            return 1
+        print(f"Found your chat{' (' + name + ')' if name else ''}. Add this line to your .env file, then run this again:")
+        print(f"  SOLSCOUT_TELEGRAM_CHAT_ID={chat_id}")
+        return 0
+    ok = TelegramNotifier(cfg.telegram_token, cfg.telegram_chat_id, cfg.http_timeout_s).send(
+        "SolScout is connected. Signals and exit alerts will arrive here.\n\nAutomated analysis, not advice.")
+    print("Test message sent. Check Telegram." if ok else
+          "Telegram refused the message. Check the chat ID, and that you pressed Start in your bot.")
+    return 0 if ok else 1
+
+
 def cmd_stats(_args) -> int:
     cfg = Config.from_env()
     store = Store(cfg.db_path)
@@ -214,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("--holdout", type=float, default=0.3, help="share of the newest data kept for judging (default 0.3)")
     an.add_argument("--min-score", type=float, default=None, help="score cut-off for sections 4-6 (default threshold-10)")
     an.set_defaults(fn=cmd_analyze)
+    sub.add_parser("telegram", help="set up and test Telegram alerts").set_defaults(fn=cmd_telegram)
     sv = sub.add_parser("serve", help="dashboard + scanning worker")
     sv.add_argument("--port", type=int, default=0)
     sv.add_argument("--demo", action="store_true", help="show the dashboard with sample data, no scanning")

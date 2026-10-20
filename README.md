@@ -45,7 +45,7 @@ Other commands: `scan` (one scan, with near-misses printed), `run` (worker only)
 ### Recommended setup
 
 1. **A dedicated RPC URL.** The public Solana node returns HTTP 429 quickly. Get a free key at [helius.dev](https://www.helius.dev), then set `SOLSCOUT_RPC_URL` in `.env`.
-2. **Telegram alerts.** Create a bot with @BotFather, then set `SOLSCOUT_TELEGRAM_TOKEN` and `SOLSCOUT_TELEGRAM_CHAT_ID` (steps are in `.env.example`). Keep `.env` out of git.
+2. **Telegram alerts.** Create a bot with @BotFather and put its token in `.env` as `SOLSCOUT_TELEGRAM_TOKEN`. Message your bot once, then run `python3 -m solscout telegram`: it finds your chat ID (add it as `SOLSCOUT_TELEGRAM_CHAT_ID`), and running it again sends a test message. Keep `.env` out of git.
 3. **Leave it running.** Paper results only mean something after dozens of signals, which takes days.
 
 ## Testing the strategy
