@@ -21,7 +21,7 @@ from .store import Store
 
 
 def _print_scan(res: ScanResult) -> None:
-    print(f"candidates {res.candidates}  evaluated {res.evaluated}  signals {len(res.signals)}")
+    print(f"candidates {res.candidates}  priced {res.pairs}  passed filters {res.evaluated}  signals {len(res.signals)}")
     for reason, n in sorted(res.dropped.items(), key=lambda x: -x[1]):
         print(f"  dropped {n:>3}  {reason}")
     for n in res.near[:5]:
@@ -82,8 +82,8 @@ def cmd_check(args) -> int:
         print(f"[FAIL] discovery: {e}")
         return 1
     try:
-        pairs = src.pairs(mints[:10])
-        print(f"[ok]   market data: {len(pairs)} pairs parsed")
+        pairs = src.pairs(mints[:30])
+        print(f"[ok]   market data: {len(pairs)} of the first 30 candidates have usable pair data")
         if pairs:
             p = pairs[0]
             print(f"       sample: {p.symbol} ${p.price_usd:.8g} liquidity ${p.liquidity_usd:,.0f}")
@@ -174,6 +174,15 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_analyze(args) -> int:
+    from .analyze import analyze
+    cfg = Config.from_env()
+    store = Store(cfg.db_path)
+    print(analyze(store.load_observations(), cfg, horizon=args.horizon, delay_min=args.delay_min,
+                  holdout=args.holdout, min_score=args.min_score))
+    return 0
+
+
 def cmd_stats(_args) -> int:
     cfg = Config.from_env()
     store = Store(cfg.db_path)
@@ -199,6 +208,12 @@ def main(argv: list[str] | None = None) -> int:
                             ("scan", cmd_scan, "run one scan"), ("run", cmd_run, "scan continuously"),
                             ("stats", cmd_stats, "paper-trade results")]:
         sub.add_parser(name, help=help_).set_defaults(fn=fn)
+    an = sub.add_parser("analyze", help="test the strategy on everything recorded so far")
+    an.add_argument("--horizon", type=int, default=6, help="hours to hold (default 6)")
+    an.add_argument("--delay-min", type=float, default=5, help="minutes between signal and entry (default 5: you are never instant)")
+    an.add_argument("--holdout", type=float, default=0.3, help="share of the newest data kept for judging (default 0.3)")
+    an.add_argument("--min-score", type=float, default=None, help="score cut-off for sections 4-6 (default threshold-10)")
+    an.set_defaults(fn=cmd_analyze)
     sv = sub.add_parser("serve", help="dashboard + scanning worker")
     sv.add_argument("--port", type=int, default=0)
     sv.add_argument("--demo", action="store_true", help="show the dashboard with sample data, no scanning")

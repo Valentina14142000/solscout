@@ -7,16 +7,30 @@ from ..models import SourceError
 BASE = "https://api.geckoterminal.com/api/v2/networks/solana"
 
 
+# Pools are often listed as SOL/TOKEN, so the "base" token can be the quote currency itself.
+QUOTE_MINTS = {
+    "So11111111111111111111111111111111111111112",   # wrapped SOL
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+}
+
+
+def _mint(item, rel: str) -> str | None:
+    try:
+        tid = item["relationships"][rel]["data"]["id"]
+    except (KeyError, TypeError):
+        return None
+    return tid[len("solana_"):] if isinstance(tid, str) and tid.startswith("solana_") else None
+
+
 def parse_pools(payload) -> list[str]:
-    """JSON:API payload; the base token id looks like 'solana_<mint>'."""
+    """JSON:API payload; token ids look like 'solana_<mint>'. Returns the non-quote token of each pool."""
     out: list[str] = []
     for item in (payload or {}).get("data", []) if isinstance(payload, dict) else []:
-        try:
-            tid = item["relationships"]["base_token"]["data"]["id"]
-        except (KeyError, TypeError):
-            continue
-        if isinstance(tid, str) and tid.startswith("solana_"):
-            out.append(tid[len("solana_"):])
+        base, quote = _mint(item, "base_token"), _mint(item, "quote_token")
+        pick = base if base and base not in QUOTE_MINTS else quote if quote and quote not in QUOTE_MINTS else None
+        if pick:
+            out.append(pick)
     return out
 
 

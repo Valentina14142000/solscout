@@ -18,12 +18,15 @@ def parse_candidates(payload) -> list[str]:
     return out
 
 
-def best_pairs(raw_pairs) -> list[Pair]:
-    """Keep the most liquid Solana pair for each mint."""
+def best_pairs(raw_pairs, wanted: set[str] | None = None) -> list[Pair]:
+    """Keep the most liquid Solana pair for each mint.
+
+    DexScreener's price is always the *base* token's. A pair where our token is the quote would
+    carry another token's price, so only pairs whose base token is one we asked about are kept."""
     best: dict[str, Pair] = {}
     for d in raw_pairs or []:
         p = Pair.from_dexscreener(d)
-        if p and (p.mint not in best or p.liquidity_usd > best[p.mint].liquidity_usd):
+        if p and (wanted is None or p.mint in wanted) and (p.mint not in best or p.liquidity_usd > best[p.mint].liquidity_usd):
             best[p.mint] = p
     return list(best.values())
 
@@ -55,4 +58,4 @@ class DexScreener:
                 # older endpoint shape: {"pairs": [...]}
                 data = request_json(f"{BASE}/latest/dex/tokens/{chunk}", timeout=self.timeout)
             raw.extend(data.get("pairs", []) if isinstance(data, dict) else data)
-        return best_pairs(raw)
+        return best_pairs(raw, set(mints))

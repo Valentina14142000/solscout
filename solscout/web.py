@@ -87,6 +87,8 @@ def make_server(cfg: Config, store: Store, status: Status, host: str | None = No
                 except ValueError:
                     limit = 50
                 return self._json(store.list_signals(limit))
+            if url.path == "/api/lab":
+                return self._json(store.lab_progress(time.time(), 6, cfg.signal_threshold - 10))
             if url.path == "/api/stats":
                 return self._json(store.stats(cfg.horizons_h))
             self._json({"error": "not found"}, 404)

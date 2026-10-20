@@ -53,6 +53,8 @@ a{color:var(--accent)}
   td.when{white-space:nowrap}
   table{font-size:.85rem}
 }
+.bar{height:8px;border-radius:99px;background:var(--chip);overflow:hidden;margin:8px 0}
+.bar>i{display:block;height:100%;background:var(--accent)}
 .empty{color:var(--muted);font-size:.9rem}
 footer{color:var(--muted);font-size:.8rem}
 </style>
@@ -85,6 +87,11 @@ footer{color:var(--muted);font-size:.8rem}
     <h2>Paper results</h2>
     <div class="scroll"><table id="stats"></table></div>
     <p class="muted" style="margin:10px 0 0;font-size:.85rem" id="stats-note"></p>
+  </section>
+
+  <section>
+    <h2>Strategy test progress</h2>
+    <div id="lab"></div>
   </section>
 
   <div class="cols">
@@ -222,12 +229,26 @@ footer{color:var(--muted);font-size:.8rem}
       (most < 30 ? "Only " + most + " result" + (most === 1 ? "" : "s") + " so far: far too few to mean anything." : "");
   }
 
+  var NEED = 100;  // candidate results needed so the held-out 30% reaches the 30 the analysis requires
+  function renderLab(l) {
+    var box = $("lab"); clear(box);
+    var done = l.completed_candidates, share = Math.min(1, done / NEED);
+    box.appendChild(el("div", {}, [el("b", { text: String(l.observations) }), " tokens watched so far, ",
+      el("b", { text: String(l.watching_now) }), " being tracked right now, over " + l.hours_running.toFixed(1) + " hours."]));
+    var bar = el("div", { class: "bar" }, [el("i", { style: "width:" + Math.round(share * 100) + "%" })]);
+    box.appendChild(bar);
+    box.appendChild(el("div", { class: "muted", text: done + " of ~" + NEED + " strong-score tokens have a finished " + l.horizon_h + "h result." }));
+    box.appendChild(el("p", { class: "muted", style: "margin:10px 0 0;font-size:.88rem",
+      text: done >= NEED ? "Enough to run the full test: python3 -m solscout analyze. It tells you plainly whether the strategy has an edge."
+                         : "Too early to judge anything. Keep it running; this takes days, not hours. Then run: python3 -m solscout analyze" }));
+  }
+
   function get(path) {
     return fetch(path, { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
   }
   function refresh() {
-    Promise.all([get("/api/status"), get("/api/signals?limit=50"), get("/api/stats")]).then(function (a) {
-      renderStatus(a[0]); renderSignals(a[1], a[0].now); renderStats(a[2], a[0].config.paper_cost_pct);
+    Promise.all([get("/api/status"), get("/api/signals?limit=50"), get("/api/stats"), get("/api/lab")]).then(function (a) {
+      renderStatus(a[0]); renderSignals(a[1], a[0].now); renderStats(a[2], a[0].config.paper_cost_pct); renderLab(a[3]);
       $("clock").textContent = new Date().toLocaleTimeString();
     }).catch(function () {
       $("state").textContent = "disconnected"; $("state").className = "pill bad";

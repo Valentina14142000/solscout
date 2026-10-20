@@ -41,6 +41,17 @@ class Config:
     cooldown_hours: float = 6
     max_signals_per_day: int = 10
 
+    # --- strategy research (every token that passes the filters is watched, signalled or not)
+    track_interval_s: int = 300        # price/liquidity snapshot cadence for watched tokens
+    track_hours: int = 25              # how long each token is watched
+    observe_dedupe_h: float = 6        # watch a given token at most once per this many hours
+
+    # --- exit alerts for open signals (you act on them by hand; nothing is sold for you)
+    exit_take_profit_pct: float = 50.0
+    exit_stop_loss_pct: float = 20.0
+    exit_liquidity_drop: float = 0.5   # alert when liquidity falls below this share of the entry liquidity
+    exit_watch_hours: float = 24
+
     # --- paper trading
     horizons_h: tuple[int, ...] = (1, 6, 24)
     paper_cost_pct: float = 3.0        # round-trip fees + slippage deducted from every paper result

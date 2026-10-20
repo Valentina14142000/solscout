@@ -18,6 +18,7 @@ class Status:
         self.last: dict | None = None
         self.last_error = ""
         self.demo = False
+        self.last_track = 0.0
 
     def record(self, res: ScanResult, outcomes: int) -> None:
         with self.lock:
@@ -42,6 +43,11 @@ def run_cycle(engine: Engine, status: Status) -> ScanResult | None:
     try:
         res = engine.scan_once()
         n = tracker.resolve(engine.cfg, engine.store, engine.source)
+        tracker.check_exits(engine.cfg, engine.store, engine.source, engine.notifier, clock=engine.clock)
+        now = engine.clock()
+        if now - status.last_track >= engine.cfg.track_interval_s:
+            tracker.snapshot_open(engine.cfg, engine.store, engine.source, clock=engine.clock)
+            status.last_track = now
         status.record(res, n)
         return res
     except Exception as e:  # one bad cycle must never kill the worker
