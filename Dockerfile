@@ -1,9 +1,15 @@
-FROM python:3.12-slim
+# Use official lightweight Python image
+FROM python:3.10-slim
+
+# Set working directory inside container
 WORKDIR /app
-COPY solscout ./solscout
-ENV SOLSCOUT_HOST=0.0.0.0 \
-    SOLSCOUT_DB_PATH=/data/solscout.db \
-    PYTHONUNBUFFERED=1
-VOLUME /data
-EXPOSE 8080
-CMD ["python", "-m", "solscout", "serve"]
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project files
+COPY . .
+
+# Run the bot
+CMD ["python", "main.py"]
