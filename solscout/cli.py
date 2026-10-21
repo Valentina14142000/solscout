@@ -8,7 +8,7 @@ from pathlib import Path
 
 import threading
 
-from . import runner, tracker
+from . import bot, runner, tracker
 from .config import Config
 from .engine import Engine, ScanResult
 from .models import SourceError
@@ -136,6 +136,8 @@ def cmd_run(_args) -> int:
     cfg = Config.from_env()
     eng, status, stop = _build(cfg), runner.Status(), threading.Event()
     print(f"Scanning every {cfg.scan_interval_s}s. Ctrl+C to stop.")
+    if bot.start_listener(cfg, eng.store, status, stop):
+        print("Telegram bot is answering messages (/help).")
     try:
         runner.loop(eng, status, stop, _log_cycle)
     except KeyboardInterrupt:
@@ -160,6 +162,8 @@ def cmd_serve(args) -> int:
         eng = _build(cfg)
         store = eng.store
         threading.Thread(target=runner.loop, args=(eng, status, stop, _log_cycle), daemon=True).start()
+        if bot.start_listener(cfg, store, status, stop):
+            print("Telegram bot is answering messages (/help).")
     if args.port:
         cfg.port = args.port
     srv = make_server(cfg, store, status)
